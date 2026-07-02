@@ -291,3 +291,18 @@ widget_mappa_vivibilita <- leaflet(sf_dati_consolidati) %>%
 
 # Generazione a schermo del prodotto finale
 widget_mappa_vivibilita
+
+
+# ------------------------------------------------------------------------------
+# CAPITOLO 8: ESPORTAZIONE PER LA PUBBLICAZIONE SU GITHUB PAGES
+# ------------------------------------------------------------------------------
+print("💾 Esportazione della mappa in formato HTML standalone...")
+
+# Salviamo il widget come index.html nella cartella locale della repository
+htmlwidgets::saveWidget(
+  widget_mappa_vivibilita, 
+  file = "index.html", 
+  selfcontained = TRUE
+)
+
+print("🎉 File 'index.html' pronto per il commit Git!")
