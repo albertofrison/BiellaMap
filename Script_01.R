@@ -35,6 +35,8 @@ df_target_province <- data.frame(
 # CAPITOLO 2: COOPTAZIONE WEB-DRIVER (REMOTE DEBUGGING ENGINE)
 # ------------------------------------------------------------------------------
 print("🔌 Connessione al web-driver headless sulla porta di comunicazione 9222...")
+
+# avvia via Terminale : "C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir="C:\tmp\chrome_dev_profile"
 chrome_remoto <- chromote::ChromeRemote$new(host = "127.0.0.1", port = 9222)
 chromote_obj  <- Chromote$new(browser = chrome_remoto)
 b             <- ChromoteSession$new(chromote_obj)
@@ -98,7 +100,7 @@ print("✅ Acquisizione e parsing dei dati di mercato immobiliare completati.")
 print("📖 Caricamento dei registri informativi territoriali (ISPRA, AGCOM, ISTAT)...")
 
 # --- 4.1: COMPONENTE AMBIENTALE (2° KPI - SUOLO ED ECO-SISTEMI ISPRA) ---
-df_ispra_raw <- read_excel("consumo_suolo_ispra.xlsx", sheet = "Comuni")
+df_ispra_raw <- read_excel("ISPRA_Consumo_Suolo.xlsx", sheet = "Comuni")
 df_verde_processed <- df_ispra_raw %>%
   select(Nome_Comune, Nome_Provincia, matches("Consumo di suolo \\(%\\)|%|Consumo")) %>%
   rename(Consumo_Suolo_Percentuale = 3) %>%
@@ -111,19 +113,19 @@ df_verde_processed <- df_ispra_raw %>%
   select(Comune_Join, Provincia_Join, Indice_Verde_ISPRA)
 
 # --- 4.2: COMPONENTE TELECOMUNICAZIONI (3° KPI - BANDA ULTRA LARGA AGCOM) ---
-df_agcom_raw <- read_excel("Reportistica_260331_Comuni.xls", sheet = "Agcom Report Comuni 31-03-2026")
+df_agcom_raw <- read_excel("AGCOM_Fibra.xls", sheet = "Comuni")
 df_fibra_processed <- df_agcom_raw %>%
   mutate(
     Comune_Join = str_to_upper(Comune),
     Provincia_Join = str_to_upper(Provincia),
-    Percentuale_Fibra = as.numeric(`Copertura FTTH DESI`) 
+    Percentuale_Fibra = as.numeric(`Copertura FTTH DESI`) * 100 # dati in percentuale
   ) %>%
   select(Comune_Join, Provincia_Join, Percentuale_Fibra)
 
 # --- 4.3: COMPONENTE SICUREZZA PUBBLICA (4° KPI - TASSI REATI MINISTERO INTERNO) ---
-df_criminalita_raw <- read_excel("criminalita_sole24ore.xlsx", sheet = 1)
+df_criminalita_raw <- read_excel("ISTAT_Tasso_Delitti.xlsx", sheet = "Province")
 df_criminalita_processed <- df_criminalita_raw %>%
-  select(Provincia_Estesa = 1, Valore_Indice = 2) %>%
+  select(Provincia_Estesa = Luogo, Valore_Indice = `2024`) %>%
   mutate(
     Provincia_Join = str_to_upper(str_trim(Provincia_Estesa)),
     Reati_100k = as.numeric(Valore_Indice)
@@ -133,10 +135,10 @@ df_criminalita_processed <- df_criminalita_raw %>%
 # --- 4.4: COMPONENTE INFRASTRUTTURA LOGISTICA (5° KPI - PROSSIMITÀ SERVIZI MINISTERO/ISTAT) ---
 df_aree_interne_raw <- read_excel("Ministero_Aree_Comuni.xlsx", sheet = "Comuni")
 df_servizi_processed <- df_aree_interne_raw %>%
-  select(Nome_Comune = `Comuni`, Codice_Provincia = `Provincia`, Categoria_Area = `Mappa`) %>%
+  select(Nome_Comune = `Comune`, Provincia = `Provincia`, Categoria_Area = `Mappa`) %>%
   mutate(
     Comune_Join = str_to_upper(str_trim(Nome_Comune)),
-    Provincia_Acr = str_to_upper(str_trim(Codice_Provincia)),
+    Provincia_Join = str_to_upper(str_trim(Provincia)),
     Valore_Mappa = str_to_upper(str_trim(Categoria_Area)),
     
     Indice_Servizi_ISTAT = case_when(
@@ -148,7 +150,7 @@ df_servizi_processed <- df_aree_interne_raw %>%
       TRUE ~ 50
     )
   ) %>%
-  select(Comune_Join, Provincia_Acr, Indice_Servizi_ISTAT)
+  select(Comune_Join, Provincia_Join, Indice_Servizi_ISTAT)
 
 # ------------------------------------------------------------------------------
 # CAPITOLO 5: INGEGNERIA GEOGRAFICA E COMPILAZIONE DEL GEODATABASE
@@ -188,7 +190,7 @@ sf_dati_consolidati <- sf_join_prezzi %>%
   left_join(df_verde_processed, by = c("Comune_Join" = "Comune_Join", "Provincia_Join" = "Provincia_Join")) %>%
   left_join(df_fibra_processed, by = c("Comune_Join" = "Comune_Join", "Provincia_Join" = "Provincia_Join")) %>%
   left_join(df_criminalita_processed, by = "Provincia_Join") %>% 
-  left_join(df_servizi_processed, by = c("Comune_Join" = "Comune_Join", "prov_acr" = "Provincia_Acr")) %>%
+  left_join(df_servizi_processed, by = c("Comune_Join" = "Comune_Join", "Provincia_Join" = "Provincia_Join")) %>%
   st_as_sf()
 
 # Tracciamento del confine perimetrale della provincia di Biella
@@ -244,7 +246,7 @@ sf_dati_consolidati <- sf_dati_consolidati %>%
   )
 
 # ------------------------------------------------------------------------------
-# CAPITOLO 7: MAZZUOLA CROMATICA E RENDERING CARTOGRAFICO GEODINAMICO
+# CAPITOLO 7: RENDERING CARTOGRAFICO GEODINAMICO
 # ------------------------------------------------------------------------------
 print("🎨 Compilazione delle funzioni cartografiche e generazione della mappa interattiva...")
 
