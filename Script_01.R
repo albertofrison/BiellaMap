@@ -1,7 +1,6 @@
 # ==============================================================================
-# PROGETTO: INDICE DI VIVIBILITÀ / SVILUPPO 2026
-# Descrizione: Pipeline geo-relazionale pentavariata ad alta precisione
-# Compilazione: Modulo unificato e standardizzato per Piemonte e Lombardia
+# PROGETTO: INDICE DI VIVIBILITÀ / SVILUPPO 2026 per Comuni Italiani (Focus su Piemonte e Lombardia)
+# Descrizione: Pipeline geo-relazionale a 5 variabili
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
@@ -18,7 +17,7 @@ library(leaflet)
 library(viridis)
 library(readxl)
 
-print("🚀 Inizializzazione della pipeline analitica: Indice di Vivibilità 2026...")
+print("🚀 Inizializzazione")
 
 # ------------------------------------------------------------------------------
 # CAPITOLO 1: CONFIGURAZIONE DEL COORTICE GEOGRAFICO TARGET
@@ -34,9 +33,9 @@ df_target_province <- data.frame(
 # ------------------------------------------------------------------------------
 # CAPITOLO 2: COOPTAZIONE WEB-DRIVER (REMOTE DEBUGGING ENGINE)
 # ------------------------------------------------------------------------------
-print("🔌 Connessione al web-driver headless sulla porta di comunicazione 9222...")
-
+print("🔌 Connessione al web-driver Chrome sulla porta9222...")
 # avvia via Terminale : "C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir="C:\tmp\chrome_dev_profile"
+
 chrome_remoto <- chromote::ChromeRemote$new(host = "127.0.0.1", port = 9222)
 chromote_obj  <- Chromote$new(browser = chrome_remoto)
 b             <- ChromoteSession$new(chromote_obj)
@@ -44,7 +43,7 @@ b             <- ChromoteSession$new(chromote_obj)
 df_immobiliare_consolidato <- data.frame()
 
 # ------------------------------------------------------------------------------
-# CAPITOLO 3: ESTRAZIONE ASINCRONA DATASET COMMERCIALE (1° KPI - COSTO IMMOBILI)
+# CAPITOLO 3: WEB SCRAPING DATASET COMMERCIALE (1° KPI - COSTO IMMOBILI)
 # ------------------------------------------------------------------------------
 for(i in 1:nrow(df_target_province)) {
   
