@@ -1,10 +1,12 @@
 # ==============================================================================
-# PROGETTO: BIELLA REMOTE INDEX (BRI) - REAL ESTATE DATA PIPELINE
-# Obiettivo: Estrazione, pulizia e mappatura dei prezzi immobiliari massivi
-# Stack: Chromote (Headed), Rvest, Regex Universale, SF Geometric Dissolve, Leaflet
+# PROGETTO: INDICE DI VIVIBILITÀ / SVILUPPO 2026
+# Descrizione: Pipeline geo-relazionale pentavariata ad alta precisione
+# Compilazione: Modulo unificato e standardizzato per Piemonte e Lombardia
 # ==============================================================================
 
-# 0. RESET E PREPARAZIONE AMBIENTE
+# ------------------------------------------------------------------------------
+# CAPITOLO 0: CONFIGURAZIONE AMBIENTE E CARICAMENTO MODULI
+# ------------------------------------------------------------------------------
 rm(list = ls())
 
 library(chromote)
@@ -14,13 +16,14 @@ library(dplyr)
 library(sf)
 library(leaflet)
 library(viridis)
+library(readxl)
 
-print("🚀 Avvio della pipeline immobiliare...")
+print("🚀 Inizializzazione della pipeline analitica: Indice di Vivibilità 2026...")
 
-# ==============================================================================
-# FASE 1: DEFINIZIONE DEL TARGET (PIEMONTE & LOMBARDIA)
-# ==============================================================================
-target_province <- data.frame(
+# ------------------------------------------------------------------------------
+# CAPITOLO 1: CONFIGURAZIONE DEL COORTICE GEOGRAFICO TARGET
+# ------------------------------------------------------------------------------
+df_target_province <- data.frame(
   regione = c(rep("piemonte", 8), rep("lombardia", 12)),
   provincia_cod = c("AL", "AT", "BI", "CN", "NO", "TO", "VB", "VC", 
                     "BG", "BS", "CO", "CR", "LC", "LO", "MN", "MI", "MB", "PV", "SO", "VA"),
@@ -28,269 +31,261 @@ target_province <- data.frame(
            "bergamo", "brescia", "como", "cremona", "lecco", "lodi", "mantova", "milano", "monza-brianza", "pavia", "sondrio", "varese")
 )
 
-# ==============================================================================
-# FASE 2: CONNESSIONE AL BROWSER REALE (ANTI-DATADOME DETECTING)
-# ==============================================================================
-print("🔌 Connessione all'istanza visibile di Google Chrome (Porta 9222)...")
-tryCatch({
-  chrome_remoto <- chromote::ChromeRemote$new(host = "127.0.0.1", port = 9222)
-  chromote_obj  <- Chromote$new(browser = chrome_remoto)
-  b             <- ChromoteSession$new(chromote_obj)
-}, error = function(e) {
-  stop("❌ Errore critico: Impossibile connettersi a Chrome. Verifica di aver lanciato il browser da Terminale con i parametri corretti.")
-})
+# ------------------------------------------------------------------------------
+# CAPITOLO 2: COOPTAZIONE WEB-DRIVER (REMOTE DEBUGGING ENGINE)
+# ------------------------------------------------------------------------------
+print("🔌 Connessione al web-driver headless sulla porta di comunicazione 9222...")
+chrome_remoto <- chromote::ChromeRemote$new(host = "127.0.0.1", port = 9222)
+chromote_obj  <- Chromote$new(browser = chrome_remoto)
+b             <- ChromoteSession$new(chromote_obj)
 
-# Contenitore master per accumulare i dati di tutte le province
-dataset_immobiliare_master <- data.frame()
+df_immobiliare_consolidato <- data.frame()
 
-# ==============================================================================
-# FASE 3: CICLO DI ESTRAZIONE MASSIVA (LOOP)
-# ==============================================================================
-for(i in 1:nrow(target_province)) {
+# ------------------------------------------------------------------------------
+# CAPITOLO 3: ESTRAZIONE ASINCRONA DATASET COMMERCIALE (1° KPI - COSTO IMMOBILI)
+# ------------------------------------------------------------------------------
+for(i in 1:nrow(df_target_province)) {
   
-  reg   <- target_province$regione[i]
-  prov  <- target_province$provincia_cod[i]
-  slug  <- target_province$slug[i]
+  reg   <- df_target_province$regione[i]
+  prov  <- df_target_province$provincia_cod[i]
+  slug  <- df_target_province$slug[i]
   
   url <- paste0("https://www.immobiliare.it/mercato-immobiliare/", reg, "/", slug, "-provincia/")
-  print(paste("🌐 Navigazione sulla provincia di:", toupper(slug), "(", i, "/", nrow(target_province), ")"))
+  print(paste("🌐 Scraping analitico provincia:", toupper(slug), "(", i, "/", nrow(df_target_province), ")"))
   
-  # Comando di navigazione impartito al browser fisico
   b$Page$navigate(url)
+  Sys.sleep(5) 
   
-  # Pausa precauzionale per caricamento script asincroni e risoluzione Captcha manuale
-  Sys.sleep(15) 
-  
-  # Cattura dell'HTML renderizzato dal browser reale
   runtime_result <- b$Runtime$evaluate("document.documentElement.outerHTML")
-  html_grezzo <- runtime_result$result$value
+  html_contenuto <- runtime_result$result$value
   
-  # Inizio parsing testuale del blocco dati
-  pagina <- read_html(html_grezzo)
+  pagina <- read_html(html_contenuto)
   tutti_i_testi <- pagina %>% html_elements("div") %>% html_text(trim = TRUE)
   stringa_tabella <- tutti_i_testi[str_detect(tutti_i_testi, "^ComuniVendita")]
   
-  # Controllo di sicurezza se la tabella viene nascosta o bloccata
   if(length(stringa_tabella) == 0) {
-    print(paste("⚠️ Attenzione: Tabella non intercettata per", slug, ". Controlla lo schermo di Chrome per blocchi di sicurezza!"))
+    print(paste("⚠️ Record non intercettato per la struttura:", slug))
     next
   }
   
-  # Pulizia intestazione di stringa
   stringa_dati <- str_remove(stringa_tabella[1], "ComuniVendita €/m²Affitto €/m²")
   
-  # REGEX UNIVERSALE (Risolve i casi Villanova, Gaglianico, Andorno, Portula)
-  # Gestisce decimali mancanti, singoli o doppi e cattura correttamente le variazioni.
-  pattern_universale <- "([A-Za-zÀ-ÿ\\s'-]+?)([0-9\\.]+)(\\([^)]+\\))?([0-9]+(?:,[0-9]{1,2})?)(\\([^)]+\\))?"
-  
-  matrice_estratta <- str_match_all(stringa_dati, pattern_universale)[[1]]
+  pattern_estrazione <- "([A-Za-zÀ-ÿ\\s'-]+?)([0-9\\.]+)(\\([^)]+\\))?([0-9]+(?:,[0-9]{1,2})?)(\\([^)]+\\))?"
+  matrice_estratta <- str_match_all(stringa_dati, pattern_estrazione)[[1]]
   
   if(nrow(matrice_estratta) > 0) {
-    df_provincia <- as.data.frame(matrice_estratta) %>%
-      select(Comune = V2, Prezzo_Vendita_Grezzo = V3, Prezzo_Affitto_Grezzo = V5) %>%
+    df_provincia_parziale <- as.data.frame(matrice_estratta) %>%
+      select(Comune = V2, Prezzo_Vendita_Raw = V3, Prezzo_Affitto_Raw = V5) %>%
       mutate(
         Comune = str_trim(Comune),
-        # Trasforma la vendita in intero rimuovendo i punti delle migliaia (es: 1.472 -> 1472)
-        Prezzo_Vendita_mq = as.numeric(str_remove_all(Prezzo_Vendita_Grezzo, "\\.")),
-        # Trasforma l'affitto in decimale gestendo la virgola italiana (es: 7,09 -> 7.09)
-        Prezzo_Affitto_mq = as.numeric(str_replace(Prezzo_Affitto_Grezzo, ",", ".")),
+        Prezzo_Vendita_mq = as.numeric(str_remove_all(Prezzo_Vendita_Raw, "\\.")),
+        Prezzo_Affitto_mq = as.numeric(str_replace(Prezzo_Affitto_Raw, ",", ".")),
         Provincia = prov,
         Regione = str_to_title(reg),
         Data_Rilevazione = Sys.Date()
       ) %>%
       select(Comune, Prezzo_Vendita_mq, Prezzo_Affitto_mq, Provincia, Regione, Data_Rilevazione)
     
-    # Iniezione nel dataset master condivisibile
-    dataset_immobiliare_master <- bind_rows(dataset_immobiliare_master, df_provincia)
-    print(paste("✅ Compilati con successo", nrow(df_provincia), "comuni per la provincia corrente."))
+    df_immobiliare_consolidato <- bind_rows(df_immobiliare_consolidato, df_provincia_parziale)
   }
 }
+b$close() 
+print("✅ Acquisizione e parsing dei dati di mercato immobiliare completati.")
 
-# Chiusura sicura della sessione di automazione remota
-b$close()
-print(paste("🎉 Scraping completato! Totale database caricato in memoria:", nrow(dataset_immobiliare_master), "comuni."))
+# ------------------------------------------------------------------------------
+# CAPITOLO 4: ACQUISIZIONE E PRE-ELABORAZIONE FONTI STRUTTURALI LOCALI
+# ------------------------------------------------------------------------------
+print("📖 Caricamento dei registri informativi territoriali (ISPRA, AGCOM, ISTAT)...")
 
+# --- 4.1: COMPONENTE AMBIENTALE (2° KPI - SUOLO ED ECO-SISTEMI ISPRA) ---
+df_ispra_raw <- read_excel("consumo_suolo_ispra.xlsx", sheet = "Comuni")
+df_verde_processed <- df_ispra_raw %>%
+  select(Nome_Comune, Nome_Provincia, matches("Consumo di suolo \\(%\\)|%|Consumo")) %>%
+  rename(Consumo_Suolo_Percentuale = 3) %>%
+  mutate(
+    Consumo_Suolo_Percentuale = as.numeric(Consumo_Suolo_Percentuale),
+    Comune_Join = str_to_upper(Nome_Comune),
+    Provincia_Join = str_to_upper(Nome_Provincia),
+    Indice_Verde_ISPRA = 100 - Consumo_Suolo_Percentuale 
+  ) %>%
+  select(Comune_Join, Provincia_Join, Indice_Verde_ISPRA)
 
-# ==============================================================================
-# FASE 4: ELABORAZIONE GEOGRAFICA AVANZATA - TUTTO PIEMONTE & LOMBARDIA
-# ==============================================================================
-print("🗺️ Elaborazione geografica di tutti i confini per Piemonte e Lombardia...")
+# --- 4.2: COMPONENTE TELECOMUNICAZIONI (3° KPI - BANDA ULTRA LARGA AGCOM) ---
+df_agcom_raw <- read_excel("Reportistica_260331_Comuni.xls", sheet = "Agcom Report Comuni 31-03-2026")
+df_fibra_processed <- df_agcom_raw %>%
+  mutate(
+    Comune_Join = str_to_upper(Comune),
+    Provincia_Join = str_to_upper(Provincia),
+    Percentuale_Fibra = as.numeric(`Copertura FTTH DESI`) 
+  ) %>%
+  select(Comune_Join, Provincia_Join, Percentuale_Fibra)
 
-# 1. Download mirato dei confini geografici (Regione 1 = Piemonte, Regione 3 = Lombardia)
-# Questo approccio evita di scaricare l'intera Italia, rimanendo leggerissimo.
+# --- 4.3: COMPONENTE SICUREZZA PUBBLICA (4° KPI - TASSI REATI MINISTERO INTERNO) ---
+df_criminalita_raw <- read_excel("criminalita_sole24ore.xlsx", sheet = 1)
+df_criminalita_processed <- df_criminalita_raw %>%
+  select(Provincia_Estesa = 1, Valore_Indice = 2) %>%
+  mutate(
+    Provincia_Join = str_to_upper(str_trim(Provincia_Estesa)),
+    Reati_100k = as.numeric(Valore_Indice)
+  ) %>%
+  select(Provincia_Join, Reati_100k)
+
+# --- 4.4: COMPONENTE INFRASTRUTTURA LOGISTICA (5° KPI - PROSSIMITÀ SERVIZI MINISTERO/ISTAT) ---
+df_aree_interne_raw <- read_excel("Ministero_Aree_Comuni.xlsx", sheet = "Comuni")
+df_servizi_processed <- df_aree_interne_raw %>%
+  select(Nome_Comune = `Comuni`, Codice_Provincia = `Provincia`, Categoria_Area = `Mappa`) %>%
+  mutate(
+    Comune_Join = str_to_upper(str_trim(Nome_Comune)),
+    Provincia_Acr = str_to_upper(str_trim(Codice_Provincia)),
+    Valore_Mappa = str_to_upper(str_trim(Categoria_Area)),
+    
+    Indice_Servizi_ISTAT = case_when(
+      str_detect(Valore_Mappa, "A|POLO") ~ 100,
+      str_detect(Valore_Mappa, "B|CINTURA") ~ 85,
+      str_detect(Valore_Mappa, "C|INTERMEDIO") ~ 60,
+      str_detect(Valore_Mappa, "D|PERIFERICO") ~ 40,
+      str_detect(Valore_Mappa, "E|F|ULTRAPERIFERICO") ~ 15,
+      TRUE ~ 50
+    )
+  ) %>%
+  select(Comune_Join, Provincia_Acr, Indice_Servizi_ISTAT)
+
+# ------------------------------------------------------------------------------
+# CAPITOLO 5: INGEGNERIA GEOGRAFICA E COMPILAZIONE DEL GEODATABASE
+# ------------------------------------------------------------------------------
+print("🗺️ Configurazione spaziale ed esecuzione dei Join multilivello...")
+
 url_piemonte  <- "https://raw.githubusercontent.com/openpolis/geojson-italy/master/geojson/limits_R_1_municipalities.geojson"
 url_lombardia <- "https://raw.githubusercontent.com/openpolis/geojson-italy/master/geojson/limits_R_3_municipalities.geojson"
+sf_macro_regione <- rbind(read_sf(url_piemonte), read_sf(url_lombardia))
 
-print("📥 Download mappe regionali da Openpolis in corso...")
-mappa_piemonte  <- read_sf(url_piemonte)
-mappa_lombardia <- read_sf(url_lombardia)
-
-# Uniamo geometricamente i due fogli mappa regionali in un unico macro-vettore
-mappa_macro_regione <- rbind(mappa_piemonte, mappa_lombardia)
-
-# 2. STANDARDIZZAZIONE E DIZIONARIO DI RACCORDO ESTESO PER LE FUSIONI COMUNALI
-# Integriamo i raccordi storici del Piemonte e le principali fusioni lombarde recenti
-mappa_geografica_pulita <- mappa_macro_regione %>%
+sf_base_geografica <- sf_macro_regione %>%
   mutate(Comune_Join = str_to_upper(name)) %>%
-  
   mutate(Comune_Join = case_when(
-    # --- Fusioni Piemonte ---
     Comune_Join %in% c("MOSSO", "SOPRANA", "TRIVERO", "VALLE MOSSO") ~ "VALDILANA",
     Comune_Join %in% c("QUAREGNA", "CERRETO CASTELLO") ~ "QUAREGNA CERRETO",
     Comune_Join %in% c("SAN PAOLO CERVO", "QUITTENGO") ~ "CAMPIGLIA CERVO",
     Comune_Join %in% c("CROSA") ~ "LESSONA",
-    
-    # --- Principali Fusioni Lombardia (Allineamento database 2026) ---
-    Comune_Join %in% c("PIADENA", "DRIZZONA") ~ "PIADENA DRIZZONA",
-    Comune_Join %in% c("BORGOFRANCO SUL PO", "CARBONARA DI PO") ~ "BORGOCARBONARA",
-    Comune_Join %in% c("SAN GIORGIO DI MANTOVA", "BIGARELLO") ~ "SAN GIORGIO BIGARELLO",
-    Comune_Join %in% c("CASASCO D'INTELVI", "CASTIGLIONE D'INTELVI", "SAN FEDELE INTELVI") ~ "CENTRO VALLE INTELVI",
-    Comune_Join %in% c("INTREVI SUPERIORE", "PELLIO INTELVI", "RAMPONIO VERNA") ~ "ALTA VALLE INTELVI",
-    Comune_Join %in% c("VALLEVE", "FOPPOLO") ~ "VALLEVE", # Esempio di raccordi territoriali
+    Comune_Join %in% c("RONAGO", "UGGIATE-TREVANO") ~ "UGGIATE CON RONAGO",
+    Comune_Join %in% c("ALBAREDO ARNABOLDI", "CAMPOSPINOSO") ~ "CAMPOSPINOSO ALBAREDO",
+    Comune_Join == "LIRIO" ~ "PIETRA DE' GIORGI",
+    Comune_Join == "CASORZO" ~ "CASORZO MONFERRATO",
+    Comune_Join == "GRANA" ~ "GRANA MONFERRATO",
+    Comune_Join == "LEINÌ" ~ "LEINI",
     TRUE ~ Comune_Join
   )) %>%
-  
-  # GLOBAL GEOMETRIC DISSOLVE: Fonde frammenti staccati ed enclave orfane.
-  # CRITICO: Raggruppiamo per Comune E per Provincia per evitare di fondere omonimi distanti!
-  group_by(Comune_Join, prov_acr) %>%
+  mutate(Provincia_Join = str_to_upper(prov_name)) %>%
+  group_by(Comune_Join, Provincia_Join, prov_acr) %>%
   summarise(.groups = "drop")
 
-# 3. PREPARAZIONE DEL JOIN CON IL TUO DATASET MASTER (2.309 RIGHE)
-df_prezzi_macro <- dataset_immobiliare_master %>%
-  mutate(Comune_Join = str_to_upper(Comune))
+df_prezzi_mappati <- df_immobiliare_consolidato %>% mutate(Comune_Join = str_to_upper(Comune))
+sf_join_prezzi <- sf_base_geografica %>%
+  left_join(df_prezzi_mappati, by = c("Comune_Join" = "Comune_Join", "prov_acr" = "Provincia"))
 
-# Eseguiamo il Left Join a doppia chiave per la massima precisione chirurgica
-mappa_completa_finale <- mappa_geografica_pulita %>%
-  left_join(df_prezzi_macro, by = c("Comune_Join" = "Comune_Join", "prov_acr" = "Provincia"))
+# Isolamento temporaneo del formato data.frame per prevenire eccezioni sui vettori geometrici
+sf_dati_consolidati <- sf_join_prezzi %>%
+  as.data.frame() %>% 
+  left_join(df_verde_processed, by = c("Comune_Join" = "Comune_Join", "Provincia_Join" = "Provincia_Join")) %>%
+  left_join(df_fibra_processed, by = c("Comune_Join" = "Comune_Join", "Provincia_Join" = "Provincia_Join")) %>%
+  left_join(df_criminalita_processed, by = "Provincia_Join") %>% 
+  left_join(df_servizi_processed, by = c("Comune_Join" = "Comune_Join", "prov_acr" = "Provincia_Acr")) %>%
+  st_as_sf()
 
-# 4. AUDIT FINALE SULLA QUALITÀ DEI DATI DI TUTTI I COMUNI
-buchi_globali <- mappa_completa_finale %>% filter(is.na(Prezzo_Vendita_mq)) %>% pull(Comune_Join)
+# Tracciamento del confine perimetrale della provincia di Biella
+sf_bordo_biella <- sf_dati_consolidati %>% filter(prov_acr == "BI") %>% st_union()
 
-print("==========================================================================")
-print(paste("📊 STATISTICHE MAPPA COMPLETA:"))
-print(paste("   - Poligoni totali generati nella mappa:", nrow(mappa_completa_finale)))
-print(paste("   - Comuni senza corrispondenza di prezzo (aree grigie):", length(buchi_globali)))
-print("==========================================================================")
+# ------------------------------------------------------------------------------
+# CAPITOLO 6: ALGORITMO DI NORMALIZZAZIONE STATISTICA E COMPILAZIONE NOTA DINAMICA
+# ------------------------------------------------------------------------------
+print("🧮 Esecuzione del modello di calcolo dell'Indice di Vivibilità / Sviluppo 2026...")
 
-
-
-print("✏️ Generazione del confine esterno marcato per la provincia di Biella...")
-
-confine_esterno_biella <- mappa_completa_finale %>%
-  filter(prov_acr == "BI") %>%
-  st_union() # Fonde tutti i comuni di Biella in un unico macro-perimetro esterno
-# ==============================================================================
-# FASE 5: RENDERING CARTOGRAFICO MACRO (CON BORDO BIELLA HIGHLIGHT)
-# ==============================================================================
-print("🎨 Generazione mappa Leaflet interattiva con focus provinciale...")
-
-intervalli_prezzo <- c(0, 500, 750, 1000, 1300, 1700, 2200, 3200, 4500, Inf)
-
-pal_macro <- colorBin(
-  palette = "viridis", 
-  domain = mappa_completa_finale$Prezzo_Vendita_mq,
-  bins = intervalli_prezzo,
-  na.color = "#808080"
-)
-
-mappa_macro_BRI <- leaflet(mappa_completa_finale) %>%
-  addProviderTiles(providers$CartoDB.Positron) %>%
-  
-  # 1. Disegno di tutti i comuni (sfondo interregionale)
-  addPolygons(
-    fillColor = ~pal_macro(Prezzo_Vendita_mq),
-    weight = 0.6, # Confini comunali standard molto sottili per non fare confusione
-    opacity = 1,
-    color = "white",
-    dashArray = "3",
-    fillOpacity = 0.65,
-    highlightOptions = highlightOptions(weight = 2, color = "#444", fillOpacity = 0.85, bringToFront = TRUE),
-    popup = ~paste0(
-      "<strong>Comune:</strong> ", Comune_Join, " (", prov_acr, ")<br/>",
-      "<strong>Vendita:</strong> ", ifelse(is.na(Prezzo_Vendita_mq), "N.D.", paste0(Prezzo_Vendita_mq, " €/m²")), "<br/>",
-      "<strong>Affitto:</strong> ", ifelse(is.na(Prezzo_Affitto_mq), "N.D.", paste0(Prezzo_Affitto_mq, " €/m²"))
+sf_dati_consolidati <- sf_dati_consolidati %>%
+  mutate(
+    # Normalizzazione Min-Max (Fattori inversi e diretti riscalati a 0-100)
+    min_p = min(Prezzo_Vendita_mq, na.rm = TRUE),
+    max_p = max(Prezzo_Vendita_mq, na.rm = TRUE),
+    Score_Prezzo = ifelse(!is.na(Prezzo_Vendita_mq), 100 * (max_p - Prezzo_Vendita_mq) / (max_p - min_p), 50),
+    
+    Score_Verde = ifelse(!is.na(Indice_Verde_ISPRA), Indice_Verde_ISPRA, 50),
+    Score_Fibra = ifelse(!is.na(Percentuale_Fibra), Percentuale_Fibra, 0),
+    Score_Servizi = ifelse(!is.na(Indice_Servizi_ISTAT), Indice_Servizi_ISTAT, 50),
+    
+    min_c = min(Reati_100k, na.rm = TRUE),
+    max_c = max(Reati_100k, na.rm = TRUE),
+    Score_Sicurezza = ifelse(!is.na(Reati_100k), 100 * (max_c - Reati_100k) / (max_c - min_c), 50),
+    
+    # INDICE SINTETICO SULLA VIVIBILITÀ (Ponderazione simmetrica al 20% per ciascun indicatore)
+    Indice_Vivibilita_2026 = round((Score_Prezzo + Score_Verde + Score_Fibra + Score_Sicurezza + Score_Servizi) / 5, 1),
+    
+    # STRUTTURAZIONE DELLA NOTA DI SINTESI IN FORMATO HTML PER COMPONENTE WIDGET
+    Nota_Sintesi = paste0(
+      "<div style='font-family: Arial, sans-serif; min-width: 250px;'>",
+      "<h3 style='margin:0 0 5px 0; color:#2c3e50;'>📍 ", Comune_Join, " (", prov_acr, ")</h3>",
+      "<div style='background:#f8f9fa; padding:8px; border-left:4px solid #2980b9; margin-bottom:8px;'>",
+      "<strong style='font-size:13px;'>🏆 VIVIBILITÀ: ", Indice_Vivibilita_2026, " / 100</strong><br/>",
+      "<span style='font-size:11px; color:#7f8c8d;'>Valutazione: ", 
+      case_when(
+        Indice_Vivibilita_2026 >= 72 ~ "🌟 Eccellente (Area ad alto sviluppo)",
+        Indice_Vivibilita_2026 >= 58 ~ "✅ Consigliato (Equilibrio ottimale)",
+        Indice_Vivibilita_2026 >= 45 ~ "⚖️ Discreto (Compromesso territoriale)",
+        TRUE ~ "⚠️ Critico (Forti penalizzazioni strutturali)"
+      ),
+      "</span>",
+      "</div>",
+      "<table style='width:100%; font-size:11px; border-collapse: collapse;'>",
+      "<tr><td>💰 <strong>Prezzo Casa:</strong></td><td style='text-align:right;'>", ifelse(is.na(Prezzo_Vendita_mq), "N.D.", paste0(Prezzo_Vendita_mq, " €/m²")), "</td></tr>",
+      "<tr><td>🌳 <strong>Verde Naturale:</strong></td><td style='text-align:right;'>", round(Indice_Verde_ISPRA, 1), "%</td></tr>",
+      "<tr><td>⚡ <strong>Fibra FTTH:</strong></td><td style='text-align:right;'>", round(Percentuale_Fibra, 1), "%</td></tr>",
+      "<tr><td>🚨 <strong>Sicurezza (Reati):</strong></td><td style='text-align:right;'>", round(Reati_100k, 0), " /100k</td></tr>",
+      "<tr><td>🏙️ <strong>Accesso Servizi:</strong></td><td style='text-align:right; color:#8e44ad; font-weight:bold;'>", Indice_Servizi_ISTAT, " / 100</td></tr>",
+      "</table>",
+      "</div>"
     )
-  ) %>%
-  
-  # 2. TRUCCO VISIVO: Disegniamo sopra il confine di Biella "bello spesso"
-  addPolylines(
-    data = confine_esterno_biella,
-    color = "#e74c3c",   # Un rosso corallo acceso (o "#2c3e50" se vuoi un blu scuro elegante)
-    weight = 4,          # Spessore importante (belli spessi!)
-    opacity = 1,         # Linea totalmente opaca e definita
-    smoothFactor = 1     # Massima precisione della linea sui dettagli montani
-  ) %>%
-  
-  addLegend(pal = pal_macro, values = ~Prezzo_Vendita_mq, opacity = 0.7, title = "Vendita (€/m²)", position = "bottomright")
-
-# Mostra il risultato finale con il focus su Biella
-mappa_macro_BRI
-
-
-
-
-# ==============================================================================
-# FASE 5: RENDERING CARTOGRAFICO AD ALTO CONTRASTO (PERCENTILI + RDYLBU)
-# ==============================================================================
-print("🎨 Generazione mappa Leaflet ad altissimo contrasto cromatico...")
-
-# 1. TRUCCO MATEMATICO: Calcoliamo gli intervalli basandoci sui percentili reali dei dati.
-# Questo distrugge l'effetto schiacciamento causato dai prezzi folli di Milano.
-# Creiamo 8 classi in cui i comuni sono distribuiti equamente.
-valori_validi <- mappa_completa_finale$Prezzo_Vendita_mq[!is.na(mappa_completa_finale$Prezzo_Vendita_mq)]
-intervalli_dinamici <- unique(quantile(valori_validi, probs = seq(0, 1, length.out = 9)))
-
-# Arrotondiamo i tagli per rendere la legenda leggibile e pulita
-intervalli_dinamici <- round(intervalli_dinamici)
-
-# 2. LA PALETTE AD ALTO IMPATTO: "RdYlBu" (Dal Blu al Rosso)
-# Usiamo 'rev' per associare il Blu ai prezzi bassi (convenienti) e il Rosso a quelli alti.
-pal_impatto <- colorBin(
-  palette = "RdYlBu", 
-  domain = mappa_completa_finale$Prezzo_Vendita_mq,
-  bins = intervalli_dinamici, # Tagli matematici sui percentili
-  reverse = TRUE,             # Inverte: Blu = Economico, Rosso = Caro
-  na.color = "#d5dbdb"        # Grigio chiarissimo per i pochissimi comuni N.D.
-)
-
-# 3. COMPILAZIONE DELLA SUPER MAPPA AD ALTO CONTRASTO
-mappa_macro_BRI <- leaflet(mappa_completa_finale) %>%
-  # Usiamo uno sfondo cartografico scuro (CartoDB.DarkMatter) o chiaro molto neutro.
-  # Lo sfondo chiaro 'Positron' fa risaltare tantissimo il Blu e il Rosso della palette.
-  addProviderTiles(providers$CartoDB.Positron) %>%
-  
-  # Disegno dei comuni
-  addPolygons(
-    fillColor = ~pal_impatto(Prezzo_Vendita_mq),
-    weight = 0.5, # Confini finissimi per non sporcare l'impatto del colore
-    opacity = 1,
-    color = "#ffffff", # Sottile linea bianca di stacco tra i comuni
-    dashArray = "",
-    fillOpacity = 0.8, # Colori più densi e saturi rispetto a prima
-    highlightOptions = highlightOptions(weight = 2, color = "#111111", fillOpacity = 0.95, bringToFront = TRUE),
-    popup = ~paste0(
-      "<strong>Comune:</strong> ", Comune_Join, " (", prov_acr, ")<br/>",
-      "<strong>Vendita:</strong> ", ifelse(is.na(Prezzo_Vendita_mq), "N.D.", paste0(Prezzo_Vendita_mq, " €/m²")), "<br/>",
-      "<strong>Affitto:</strong> ", ifelse(is.na(Prezzo_Affitto_mq), "N.D.", paste0(Prezzo_Affitto_mq, " €/m²"))
-    )
-  ) %>%
-  
-  # 4. IL BORDO DI BIELLA: Lo facciamo Nero Spesso per spaccare la mappa in quel punto
-  addPolylines(
-    data = confine_esterno_biella,
-    color = "#2c3e50",   # Blu notte/Nero elegante metallico
-    weight = 4.5,        # Molto spesso e marcato
-    opacity = 1
-  ) %>%
-  
-  # Legenda aggiornata con i tagli dinamici
-  addLegend(
-    pal = pal_impatto, 
-    values = ~Prezzo_Vendita_mq, 
-    opacity = 0.8, 
-    title = "Mercato Vendita (€/m²)", 
-    position = "bottomright"
   )
 
-# Mostra la mappa rivoluzionata
-mappa_macro_BRI
+# ------------------------------------------------------------------------------
+# CAPITOLO 7: MAZZUOLA CROMATICA E RENDERING CARTOGRAFICO GEODINAMICO
+# ------------------------------------------------------------------------------
+print("🎨 Compilazione delle funzioni cartografiche e generazione della mappa interattiva...")
+
+# Generazione dei gradienti discreti e continui per i layer analitici
+pal_indice_vivibilita <- colorNumeric(palette = "RdYlGn", domain = sf_dati_consolidati$Indice_Vivibilita_2026, na.color = "#d5dbdb")
+pal_prezzi            <- colorBin(palette = "RdYlBu", domain = sf_dati_consolidati$Prezzo_Vendita_mq, bins = 8, reverse = TRUE, na.color = "#d5dbdb")
+pal_verde             <- colorNumeric(palette = c("#7E5109", "#D35400", "#FFFF99", "#113F23", "#0A2F1D"), domain = sf_dati_consolidati$Indice_Verde_ISPRA, na.color = "#d5dbdb")
+pal_fibra             <- colorNumeric(palette = "YlGnBu", domain = sf_dati_consolidati$Percentuale_Fibra, na.color = "#d5dbdb")
+pal_crimine           <- colorNumeric(palette = "OrRd", domain = sf_dati_consolidati$Reati_100k, na.color = "#d5dbdb")
+pal_servizi           <- colorNumeric(palette = "Purples", domain = sf_dati_consolidati$Indice_Servizi_ISTAT, na.color = "#d5dbdb")
+
+# Assemblaggio finale del widget Leaflet a 6 gruppi cartografici condivisibili
+widget_mappa_vivibilita <- leaflet(sf_dati_consolidati) %>%
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  
+  # Layer 1: Indice di Sintesi Globale (Inizializzazione di default sullo schermo)
+  addPolygons(fillColor = ~pal_indice_vivibilita(Indice_Vivibilita_2026), weight = 0.5, color = "white", fillOpacity = 0.8, group = "🏆 Indice di Vivibilità / Sviluppo 2026", popup = ~Nota_Sintesi) %>%
+  
+  # Layer Informativi Verticali
+  addPolygons(fillColor = ~pal_prezzi(Prezzo_Vendita_mq), weight = 0.5, color = "white", fillOpacity = 0.8, group = "💰 Prezzi Vendita (€/m²)", popup = ~Nota_Sintesi) %>%
+  addPolygons(fillColor = ~pal_verde(Indice_Verde_ISPRA), weight = 0.5, color = "white", fillOpacity = 0.8, group = "🌳 Indice del Verde (%)", popup = ~Nota_Sintesi) %>%
+  addPolygons(fillColor = ~pal_fibra(Percentuale_Fibra), weight = 0.5, color = "white", fillOpacity = 0.8, group = "⚡ Copertura Fibra FTTH (%)", popup = ~Nota_Sintesi) %>%
+  addPolygons(fillColor = ~pal_crimine(Reati_100k), weight = 0.5, color = "white", fillOpacity = 0.8, group = "🚨 Indice Criminalità", popup = ~Nota_Sintesi) %>%
+  addPolygons(fillColor = ~pal_servizi(Indice_Servizi_ISTAT), weight = 0.5, color = "white", fillOpacity = 0.8, group = "🏙️ Accesso Servizi (ISTAT)", popup = ~Nota_Sintesi) %>%
+  
+  # Overlay grafico fisso: Perimetro della provincia di Biella
+  addPolylines(data = sf_bordo_biella, color = "#2c3e50", weight = 4.5, opacity = 1) %>%
+  
+  # Pannello di controllo interattivo per lo switch dei database visualizzati
+  addLayersControl(
+    baseGroups = c(
+      "🏆 Indice di Vivibilità / Sviluppo 2026", 
+      "💰 Prezzi Vendita (€/m²)", 
+      "🌳 Indice del Verde (%)", 
+      "⚡ Copertura Fibra FTTH (%)", 
+      "🚨 Indice Criminalità", 
+      "🏙️ Accesso Servizi (ISTAT)"
+    ),
+    options = layersControlOptions(collapsed = FALSE),
+    position = "topright"
+  )
+
+# Generazione a schermo del prodotto finale
+widget_mappa_vivibilita

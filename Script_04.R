@@ -114,7 +114,7 @@ df_fibra_pulito <- df_fibra_grezza %>%
   mutate(
     Comune_Join = str_to_upper(Comune),
     Provincia_Join = str_to_upper(Provincia),
-    Percentuale_Fibra = as.numeric(`Copertura FTTH DESI`) # Apici inversi corretti
+    Percentuale_Fibra = as.numeric(`Copertura FTTH DESI`)*100 # Apici inversi corretti
   ) %>%
   select(Comune_Join, Provincia_Join, Percentuale_Fibra)
 
