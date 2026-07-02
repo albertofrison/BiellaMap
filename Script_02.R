@@ -8,9 +8,9 @@ library(viridis)
 # ==============================================================================
 # FASE 4A: SCARICARE DATI GREEN ISPRA (ADATTATO SULLA TUA STRUTTURA)
 # ==============================================================================
+#https://www.isprambiente.gov.it/it/attivita/suolo-e-territorio/suolo/il-consumo-di-suolo/i-dati-sul-consumo-di-suolo
 
-
-dati_ispra_grezzi <- read_excel("consumo_suolo_ispra.xlsx", sheet = "Comuni")
+dati_ispra_grezzi <- read_excel("consumo_di_suolo_estratto_dati_2025_anni_2006_2024.xlsx", sheet = "Comuni")
 
 # ==============================================================================
 # FASE 4B: ELABORAZIONE DATI GREEN ISPRA (ADATTATO SULLA TUA STRUTTURA)
