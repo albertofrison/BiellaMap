@@ -24,7 +24,7 @@ target_province <- data.frame(
   regione = c(rep("piemonte", 8), rep("lombardia", 12)),
   provincia_cod = c("AL", "AT", "BI", "CN", "NO", "TO", "VB", "VC", 
                     "BG", "BS", "CO", "CR", "LC", "LO", "MN", "MI", "MB", "PV", "SO", "VA"),
-  slug = c("alessandria", "asti", "biella", "cuneo", "novara", "torino", "verbano-cusio-ossola", "vercelli",
+  slug = c("alessandria", "asti", "biella", "cuneo", "novara", "torino", "verbania", "vercelli",
            "bergamo", "brescia", "como", "cremona", "lecco", "lodi", "mantova", "milano", "monza-brianza", "pavia", "sondrio", "varese")
 )
 
@@ -173,13 +173,17 @@ print(paste("   - Comuni senza corrispondenza di prezzo (aree grigie):", length(
 print("==========================================================================")
 
 
-# ==============================================================================
-# FASE 5: CONFIGURAZIONE MOTORE CARTOGRAFICO ED EMISSIONE MAPPA MACRO
-# ==============================================================================
-print("🎨 Generazione del rendering della mappa interattiva Leaflet su scala macro...")
 
-# Per evitare che i picchi di Milano appiattiscano visivamente il resto delle regioni,
-# spezziamo i prezzi in classi/intervalli intelligenti (Bins) per massimizzare il contrasto.
+print("✏️ Generazione del confine esterno marcato per la provincia di Biella...")
+
+confine_esterno_biella <- mappa_completa_finale %>%
+  filter(prov_acr == "BI") %>%
+  st_union() # Fonde tutti i comuni di Biella in un unico macro-perimetro esterno
+# ==============================================================================
+# FASE 5: RENDERING CARTOGRAFICO MACRO (CON BORDO BIELLA HIGHLIGHT)
+# ==============================================================================
+print("🎨 Generazione mappa Leaflet interattiva con focus provinciale...")
+
 intervalli_prezzo <- c(0, 500, 750, 1000, 1300, 1700, 2200, 3200, 4500, Inf)
 
 pal_macro <- colorBin(
@@ -189,41 +193,104 @@ pal_macro <- colorBin(
   na.color = "#808080"
 )
 
-# Compilazione del widget HTML Leaflet
 mappa_macro_BRI <- leaflet(mappa_completa_finale) %>%
-  # Sfondo cartografico minimale (mette in risalto i tuoi dati)
   addProviderTiles(providers$CartoDB.Positron) %>%
   
-  # Disegno asincrono di tutti i 2.300+ poligoni
+  # 1. Disegno di tutti i comuni (sfondo interregionale)
   addPolygons(
     fillColor = ~pal_macro(Prezzo_Vendita_mq),
-    weight = 1, # Confini più sottili per una visualizzazione pulita ad alto zoom
+    weight = 0.6, # Confini comunali standard molto sottili per non fare confusione
     opacity = 1,
     color = "white",
     dashArray = "3",
     fillOpacity = 0.65,
-    highlightOptions = highlightOptions(
-      weight = 2.5,
-      color = "#444",
-      dashArray = "",
-      fillOpacity = 0.85,
-      bringToFront = TRUE
-    ),
+    highlightOptions = highlightOptions(weight = 2, color = "#444", fillOpacity = 0.85, bringToFront = TRUE),
     popup = ~paste0(
       "<strong>Comune:</strong> ", Comune_Join, " (", prov_acr, ")<br/>",
-      "<strong>Prezzo Vendita Medio:</strong> ", ifelse(is.na(Prezzo_Vendita_mq), "Dato non disp.", paste0(Prezzo_Vendita_mq, " €/m²")), "<br/>",
-      "<strong>Prezzo Affitto Medio:</strong> ", ifelse(is.na(Prezzo_Affitto_mq), "Dato non disp.", paste0(Prezzo_Affitto_mq, " €/m²"))
+      "<strong>Vendita:</strong> ", ifelse(is.na(Prezzo_Vendita_mq), "N.D.", paste0(Prezzo_Vendita_mq, " €/m²")), "<br/>",
+      "<strong>Affitto:</strong> ", ifelse(is.na(Prezzo_Affitto_mq), "N.D.", paste0(Prezzo_Affitto_mq, " €/m²"))
     )
   ) %>%
   
-  # Posizionamento della legenda dinamica strutturata a blocchi
+  # 2. TRUCCO VISIVO: Disegniamo sopra il confine di Biella "bello spesso"
+  addPolylines(
+    data = confine_esterno_biella,
+    color = "#e74c3c",   # Un rosso corallo acceso (o "#2c3e50" se vuoi un blu scuro elegante)
+    weight = 4,          # Spessore importante (belli spessi!)
+    opacity = 1,         # Linea totalmente opaca e definita
+    smoothFactor = 1     # Massima precisione della linea sui dettagli montani
+  ) %>%
+  
+  addLegend(pal = pal_macro, values = ~Prezzo_Vendita_mq, opacity = 0.7, title = "Vendita (€/m²)", position = "bottomright")
+
+# Mostra il risultato finale con il focus su Biella
+mappa_macro_BRI
+
+
+
+
+# ==============================================================================
+# FASE 5: RENDERING CARTOGRAFICO AD ALTO CONTRASTO (PERCENTILI + RDYLBU)
+# ==============================================================================
+print("🎨 Generazione mappa Leaflet ad altissimo contrasto cromatico...")
+
+# 1. TRUCCO MATEMATICO: Calcoliamo gli intervalli basandoci sui percentili reali dei dati.
+# Questo distrugge l'effetto schiacciamento causato dai prezzi folli di Milano.
+# Creiamo 8 classi in cui i comuni sono distribuiti equamente.
+valori_validi <- mappa_completa_finale$Prezzo_Vendita_mq[!is.na(mappa_completa_finale$Prezzo_Vendita_mq)]
+intervalli_dinamici <- unique(quantile(valori_validi, probs = seq(0, 1, length.out = 9)))
+
+# Arrotondiamo i tagli per rendere la legenda leggibile e pulita
+intervalli_dinamici <- round(intervalli_dinamici)
+
+# 2. LA PALETTE AD ALTO IMPATTO: "RdYlBu" (Dal Blu al Rosso)
+# Usiamo 'rev' per associare il Blu ai prezzi bassi (convenienti) e il Rosso a quelli alti.
+pal_impatto <- colorBin(
+  palette = "RdYlBu", 
+  domain = mappa_completa_finale$Prezzo_Vendita_mq,
+  bins = intervalli_dinamici, # Tagli matematici sui percentili
+  reverse = TRUE,             # Inverte: Blu = Economico, Rosso = Caro
+  na.color = "#d5dbdb"        # Grigio chiarissimo per i pochissimi comuni N.D.
+)
+
+# 3. COMPILAZIONE DELLA SUPER MAPPA AD ALTO CONTRASTO
+mappa_macro_BRI <- leaflet(mappa_completa_finale) %>%
+  # Usiamo uno sfondo cartografico scuro (CartoDB.DarkMatter) o chiaro molto neutro.
+  # Lo sfondo chiaro 'Positron' fa risaltare tantissimo il Blu e il Rosso della palette.
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  
+  # Disegno dei comuni
+  addPolygons(
+    fillColor = ~pal_impatto(Prezzo_Vendita_mq),
+    weight = 0.5, # Confini finissimi per non sporcare l'impatto del colore
+    opacity = 1,
+    color = "#ffffff", # Sottile linea bianca di stacco tra i comuni
+    dashArray = "",
+    fillOpacity = 0.8, # Colori più densi e saturi rispetto a prima
+    highlightOptions = highlightOptions(weight = 2, color = "#111111", fillOpacity = 0.95, bringToFront = TRUE),
+    popup = ~paste0(
+      "<strong>Comune:</strong> ", Comune_Join, " (", prov_acr, ")<br/>",
+      "<strong>Vendita:</strong> ", ifelse(is.na(Prezzo_Vendita_mq), "N.D.", paste0(Prezzo_Vendita_mq, " €/m²")), "<br/>",
+      "<strong>Affitto:</strong> ", ifelse(is.na(Prezzo_Affitto_mq), "N.D.", paste0(Prezzo_Affitto_mq, " €/m²"))
+    )
+  ) %>%
+  
+  # 4. IL BORDO DI BIELLA: Lo facciamo Nero Spesso per spaccare la mappa in quel punto
+  addPolylines(
+    data = confine_esterno_biella,
+    color = "#2c3e50",   # Blu notte/Nero elegante metallico
+    weight = 4.5,        # Molto spesso e marcato
+    opacity = 1
+  ) %>%
+  
+  # Legenda aggiornata con i tagli dinamici
   addLegend(
-    pal = pal_macro, 
+    pal = pal_impatto, 
     values = ~Prezzo_Vendita_mq, 
-    opacity = 0.7, 
-    title = "Vendita (€/m²)",
+    opacity = 0.8, 
+    title = "Mercato Vendita (€/m²)", 
     position = "bottomright"
   )
 
-# Mostra il super-prototipo finale
+# Mostra la mappa rivoluzionata
 mappa_macro_BRI
